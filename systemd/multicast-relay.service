@@ -1,0 +1,15 @@
+[Unit]
+Description=Multicast/SSDP/mDNS relay for Sonos and AirPlay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Requires TWO distinct network interfaces on the same LAN (see README for why).
+# Adjust interface names to match your host.
+ExecStart=/usr/bin/python3 /opt/multicast-relay/multicast-relay.py --interfaces eth0 eth1 --oneInterface --foreground
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

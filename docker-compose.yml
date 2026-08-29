@@ -1,0 +1,8 @@
+services:
+  yt-sonos-bridge:
+    build: .
+    image: sonos-castbridge/yt-sonos-bridge:local
+    container_name: yt-sonos-bridge
+    network_mode: host
+    restart: unless-stopped
+    env_file: .env

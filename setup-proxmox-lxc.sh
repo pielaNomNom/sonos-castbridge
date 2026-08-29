@@ -35,9 +35,14 @@ pct start 103
 # container as the relay above causes it to advertise itself twice (once per
 # interface IP) via DIAL/SSDP. Regular YouTube tolerates that; YouTube Music's
 # cast handshake does not and hangs on "loading" forever. See README.
+#
+# --cores 1 measurably bottlenecks this: yt-dlp + deno spike to 100% CPU for
+# several seconds on every track change while deciphering/downloading audio,
+# which is what causes playback to stutter on a single core. Use at least 2,
+# 3 if you have the headroom.
 pct create 107 "$TEMPLATE" \
   --hostname yt-sonos-bridge \
-  --memory 512 --swap 512 --cores 1 \
+  --memory 1024 --swap 512 --cores 3 \
   --rootfs local-lvm:6 \
   --net0 name=eth0,bridge=$BRIDGE,ip=dhcp \
   --unprivileged 0 \

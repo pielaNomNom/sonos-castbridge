@@ -20,6 +20,31 @@ Both fixes run as small, always-on services on a home server (this was built
 and tested on Proxmox LXC containers, but any always-on Linux box on the LAN
 works).
 
+## Requirements
+
+**mDNS/SSDP relay:**
+- Python 3 + `netifaces`
+- **Two distinct network interfaces on the same LAN/subnet** — not optional,
+  see below for why
+- Negligible CPU/RAM (512MB / 1 core is plenty; it's just forwarding packets)
+
+**YouTube/YouTube Music → Sonos bridge:**
+- Docker + Docker Compose v2
+- One network interface, on the same LAN as the Sonos speaker (see below for
+  why it must NOT share a host with the relay above)
+- **At least 2 CPU cores, 3 recommended.** Measured live with `docker stats`
+  during an actual track change: yt-dlp + deno spike to 100% CPU for several
+  seconds while deciphering YouTube's signature and downloading the audio.
+  On a single core this is exactly what causes playback to stutter/delay at
+  every track change — it's not a bug, it's the container running out of
+  CPU. 1 core "works" but noticeably lags.
+- 1GB RAM (peaked around 360MB during testing; 512MB is cutting it close
+  once Node + yt-dlp + deno are all resident at once)
+
+These are already set in [`docker-compose.yml`](docker-compose.yml)
+(`cpus: "2.0"`, `mem_limit: 1024m`) and in
+[`setup-proxmox-lxc.sh`](setup-proxmox-lxc.sh).
+
 ## Part 1 — mDNS/SSDP relay
 
 **Symptom:** same WiFi network, same SSID, same subnet — but a phone on one

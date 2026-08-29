@@ -6,3 +6,10 @@ services:
     network_mode: host
     restart: unless-stopped
     env_file: .env
+    # See "Requirements" in the README for why this needs >1 CPU. A single
+    # core measurably maxes out (100%) for several seconds on every track
+    # change while yt-dlp/deno decipher and download the audio, which is
+    # exactly what causes playback to stutter/delay on underpowered hosts.
+    cpus: "2.0"
+    mem_limit: 1024m
+    mem_reservation: 512m

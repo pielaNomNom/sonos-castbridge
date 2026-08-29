@@ -101,6 +101,26 @@ either side. Running the bridge in its own single-NIC container/host fixes it
 immediately. This took a raw packet capture on the DIAL port to actually spot
 (the sender's connection attempt never even reached application-level logs).
 
+### Multiple rooms / multiple speakers
+
+The relay from Part 1 needs no changes — it's protocol-level and doesn't
+care how many Sonos zones exist on the LAN, one instance covers the whole
+house.
+
+The bridge is different: it's hardcoded to one `SONOS_DEVICE_IP` and shows
+up as a single named entry in the Cast picker. For per-room casting, run
+**one bridge instance per room**, each with its own Sonos target IP and
+its own DIAL port (hardcoded upstream at `8099`, exposed here as a Docker
+build arg so each instance can get a distinct one). The audio-serving port
+doesn't need a separate patch — it already derives from `SERVER_ENDPOINT`.
+
+See [`docker-compose.multi-room.yml.example`](docker-compose.multi-room.yml.example).
+This is intentionally still one-container-per-service on a single host —
+it does **not** need the single-NIC-per-instance treatment from the section
+above, because that bug was about one device ambiguously advertising two
+different locations for the *same* identity. Multiple rooms are genuinely
+different DIAL devices with different names, which senders handle fine.
+
 ## Setup
 
 ```bash

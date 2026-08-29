@@ -1,5 +1,13 @@
 FROM ghcr.io/tetrisblack/yt-sonos-bridge:main
 
+# DIAL server port is hardcoded upstream (dial:{port:8099}) and can't be set
+# via env var. Needed as a build arg so multiple rooms/speakers can each run
+# their own bridge instance on the same host without port clashes — the
+# audio-serving port doesn't need this, it already derives from
+# SERVER_ENDPOINT. See "Multiple rooms" in the README.
+ARG DIAL_PORT=8099
+RUN sed -i "s/dial:{port:8099}/dial:{port:${DIAL_PORT}}/" /app/bundle.mjs
+
 # yt-dlp needs a JS runtime to decipher YouTube's signature scheme.
 # The base image ships Alpine with no JS runtime installed, which causes
 # playback to fail with "Failed to extract signature decipher algorithm"

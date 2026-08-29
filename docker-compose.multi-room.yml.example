@@ -1,0 +1,56 @@
+# Example for running one bridge instance per room/speaker, all on the same
+# host. Copy to docker-compose.yml (or `docker compose -f` this file
+# directly) and add/remove services to match your speakers.
+#
+# Each service needs a UNIQUE DIAL_PORT (build arg) and a UNIQUE
+# SERVER_ENDPOINT port (env var, in its own .env.<room> file) — reusing
+# either will make two instances fight over the same port. YT_PLAYER_NAME
+# in each .env.<room> is what shows up as a distinct entry in the Cast
+# picker, so make it recognizable (e.g. "Living Room", not "Sonos Era 300"
+# x3).
+#
+# The mDNS/SSDP relay from Part 1 is shared — you only need one of those for
+# the whole house, regardless of how many bridge instances run here.
+
+services:
+  yt-sonos-bridge-living-room:
+    build:
+      context: .
+      args:
+        DIAL_PORT: 8099
+    image: sonos-castbridge/yt-sonos-bridge:living-room
+    container_name: yt-sonos-bridge-living-room
+    network_mode: host
+    restart: unless-stopped
+    env_file: .env.living-room
+    cpus: "2.0"
+    mem_limit: 1024m
+    mem_reservation: 512m
+
+  yt-sonos-bridge-bedroom:
+    build:
+      context: .
+      args:
+        DIAL_PORT: 8100
+    image: sonos-castbridge/yt-sonos-bridge:bedroom
+    container_name: yt-sonos-bridge-bedroom
+    network_mode: host
+    restart: unless-stopped
+    env_file: .env.bedroom
+    cpus: "2.0"
+    mem_limit: 1024m
+    mem_reservation: 512m
+
+  yt-sonos-bridge-kitchen:
+    build:
+      context: .
+      args:
+        DIAL_PORT: 8101
+    image: sonos-castbridge/yt-sonos-bridge:kitchen
+    container_name: yt-sonos-bridge-kitchen
+    network_mode: host
+    restart: unless-stopped
+    env_file: .env.kitchen
+    cpus: "2.0"
+    mem_limit: 1024m
+    mem_reservation: 512m

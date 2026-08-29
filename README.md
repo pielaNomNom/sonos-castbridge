@@ -1,5 +1,11 @@
 # sonos-castbridge
 
+A small self-hosted relay server that sits on your LAN and fixes Sonos
+discovery/casting on networks where cheap routers mess up multicast (mDNS/
+IGMP) between WiFi bands — and, as a side effect, gives **Android** a way to
+cast music to Sonos (YouTube / YouTube Music) that's functionally equivalent
+to what AirPlay already gives **iPhone** for free.
+
 Fix two related home-network problems with Sonos speakers:
 
 1. **AirPlay / the Sonos app can't find the speaker at all**, on networks where

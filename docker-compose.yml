@@ -5,7 +5,16 @@ services:
     container_name: yt-sonos-bridge
     network_mode: host
     restart: unless-stopped
-    env_file: .env
+    # Order matters: sonos-target.env (written by sonos-watcher) overrides
+    # SONOS_DEVICE_IP from .env, so the watcher's discovery/MAC-tracking
+    # takes precedence once you've used it at least once. Until then it
+    # falls back to whatever SONOS_DEVICE_IP you set in .env.
+    env_file:
+      - .env
+      - path: ./data/sonos-target.env
+        required: false
+    depends_on:
+      - sonos-watcher
     # See "Requirements" in the README for why this needs >1 CPU. A single
     # core measurably maxes out (100%) for several seconds on every track
     # change while yt-dlp/deno decipher and download the audio, which is
@@ -13,3 +22,48 @@ services:
     cpus: "2.0"
     mem_limit: 1024m
     mem_reservation: 512m
+    labels:
+      - autoheal=true
+    # yt-cast-receiver can crash internally (e.g. a transient failure talking
+    # to Google's "lounge token" API) without the Node process itself exiting
+    # — the container stays "Up" while the DIAL server is dead and invisible
+    # to every sender. `restart: unless-stopped` does nothing for that, since
+    # Docker never sees a process exit. This checks that the DIAL endpoint
+    # actually answers; the `autoheal` sidecar below restarts the container
+    # when it doesn't.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8099/ytcr/apps/YouTube"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  autoheal:
+    image: willfarrell/autoheal:latest
+    container_name: autoheal
+    restart: unless-stopped
+    environment:
+      AUTOHEAL_CONTAINER_LABEL: autoheal
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  sonos-watcher:
+    build: ./sonos-watcher
+    image: sonos-castbridge/sonos-watcher:local
+    container_name: sonos-watcher
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      BRIDGE_CONTAINER_NAME: yt-sonos-bridge
+      CHECK_INTERVAL_SECONDS: "60"
+      PORT: "8088"
+      # Must be this host's real LAN IP (not 127.0.0.1). Needed to pin
+      # multicast sends to the actual NIC — see the comment in watcher.py.
+      # Same value as the host part of SERVER_ENDPOINT in .env.
+      HOST_IP: ${HOST_IP}
+      # Bootstrap IP for the ZoneGroupTopology query (any already-known
+      # Sonos speaker works) — reuses whatever's already set for the bridge.
+      SEED_IP: ${SONOS_DEVICE_IP}
+    volumes:
+      - ./data:/data
+      - /var/run/docker.sock:/var/run/docker.sock

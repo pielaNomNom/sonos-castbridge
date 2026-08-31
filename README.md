@@ -121,19 +121,75 @@ above, because that bug was about one device ambiguously advertising two
 different locations for the *same* identity. Multiple rooms are genuinely
 different DIAL devices with different names, which senders handle fine.
 
+## Part 3 — sonos-watcher (pick a speaker, survive DHCP)
+
+Setting `SONOS_DEVICE_IP` by hand means two problems in practice: finding
+the IP in the first place (this project's own history involved tcpdump),
+and the bridge silently going stale if DHCP ever hands that speaker a
+different address.
+
+`sonos-watcher` is a small sidecar (`./sonos-watcher`, plain Python stdlib,
+no dependencies) that fixes both:
+
+- **A web UI** (port `8088`) to discover Sonos speakers and pick one, instead
+  of hunting for an IP by hand.
+- **A background loop** that re-resolves the *chosen* speaker's current IP
+  by MAC address every `CHECK_INTERVAL_SECONDS` (default 60s), and restarts
+  `yt-sonos-bridge` via the Docker socket if DHCP has changed it.
+
+### Discovery is zone-topology-based, not SSDP
+
+The obvious way to discover Sonos speakers is an SSDP `M-SEARCH` for
+`urn:schemas-upnp-org:device:ZonePlayer:1`. It doesn't work reliably against
+real Sonos hardware — confirmed here by testing directly against a speaker,
+from multiple hosts, with multiple `ST` values, over many attempts: no
+replies, ever. What Sonos speakers *do* is periodically broadcast their own
+unprompted `NOTIFY` announcements, which is what most control apps actually
+key off (SSDP is still sent as a courtesy, since some other UPnP devices
+answer it fine).
+
+Rather than depend on catching one of those announcements within some
+timeout window, `sonos-watcher` uses the same mechanism the real Sonos app
+uses: it asks one *already-known* speaker's `ZoneGroupTopology` service
+("who else is in your household?") via a direct SOAP call. This needs a
+bootstrap IP (`SEED_IP`, reused from `SONOS_DEVICE_IP` in `.env`) the first
+time; after a speaker is selected once, its own last-known IP is used as the
+seed for future lookups, so this keeps working even if you started from a
+speaker that later got renamed or dropped from the group. SSDP is kept as a
+fallback for a from-scratch setup with literally no Sonos IP known yet.
+
+### A gotcha this surfaced: Docker's own network vs. the real LAN
+
+Docker Compose creates a default bridge network for the project even when
+every service uses `network_mode: host`, which leaves the host multi-homed
+(the real LAN NIC *and* Docker's internal bridge, e.g. `172.18.0.1`).
+Joining a multicast group or sending from it without pinning the interface
+lets the kernel pick either one — and it doesn't always pick the one that
+actually reaches the LAN. `HOST_IP` (also reused from `SERVER_ENDPOINT` in
+`.env`) exists specifically to force `sonos-watcher`'s sockets onto the real
+NIC. If you fork this further and add more multicast/broadcast code, keep
+this in mind — it's an easy thing to lose an afternoon to.
+
 ## Setup
 
 ```bash
 git clone <this-repo>
 cd sonos-castbridge
 cp .env.example .env
-$EDITOR .env   # set SONOS_DEVICE_IP and SERVER_ENDPOINT
+$EDITOR .env   # set SONOS_DEVICE_IP, SERVER_ENDPOINT and HOST_IP
 docker compose up -d --build
 ```
 
+This brings up all three pieces from Part 2 and 3: `yt-sonos-bridge`,
+`autoheal` (restarts it if its health check fails), and `sonos-watcher`
+(discovery UI + DHCP-change tracking). `SONOS_DEVICE_IP` only needs to be
+roughly right at first boot — visit `http://<HOST_IP>:8088`, pick your
+speaker from the list, and `sonos-watcher` takes over from there.
+
 `SONOS_DEVICE_IP` is the IP of the target speaker (or group coordinator).
-`SERVER_ENDPOINT` must be this host's own LAN IP — Sonos fetches audio from
-it directly.
+`SERVER_ENDPOINT` and `HOST_IP` must both be this host's own LAN IP — Sonos
+fetches audio from it directly, and sonos-watcher needs it to avoid binding
+to Docker's own internal network by mistake (see Part 3).
 
 For the mDNS/SSDP relay, see [`setup-proxmox-lxc.sh`](setup-proxmox-lxc.sh)
 and drop [`systemd/multicast-relay.service`](systemd/multicast-relay.service)

@@ -12,6 +12,7 @@ Small sidecar for sonos-castbridge:
 Deliberately kept as one plain-stdlib file (no Flask/requests) to avoid
 pulling in a dependency chain for something this small.
 """
+import html
 import json
 import os
 import re
@@ -254,21 +255,270 @@ def watch_loop():
 
 
 PAGE_TEMPLATE = """<!DOCTYPE html>
-<html><head><title>sonos-castbridge target</title>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>sonos-castbridge · target</title>
 <style>
-body {{ font-family: sans-serif; margin: 2rem; max-width: 700px; }}
-table {{ border-collapse: collapse; width: 100%; }}
-td, th {{ border: 1px solid #ccc; padding: 8px; text-align: left; }}
-button {{ padding: 6px 14px; cursor: pointer; }}
-.current {{ background: #eaffea; }}
-</style></head>
+  :root {{
+    --bg: #15161a;
+    --panel: #1d1f24;
+    --inset: #101114;
+    --line: #2b2d33;
+    --text: #ede9e0;
+    --text-dim: #8c8f98;
+    --amber: #e2a34c;
+    --good: #6fcf97;
+    --mono: ui-monospace, "SF Mono", "IBM Plex Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, "Segoe UI", system-ui, sans-serif;
+  }}
+  * {{ box-sizing: border-box; }}
+  body {{
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    background-image: radial-gradient(ellipse 900px 500px at 50% -10%, rgba(226,163,76,0.07), transparent 60%);
+    color: var(--text);
+    font-family: var(--sans);
+    display: flex;
+    justify-content: center;
+    padding: 3.5rem 1.25rem 4rem;
+  }}
+  main {{ width: 100%; max-width: 460px; }}
+  .eyebrow {{
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.18em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin: 0 0 0.4rem;
+  }}
+  h1 {{
+    font-size: 1.5rem;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    margin: 0 0 1.75rem;
+  }}
+  .readout {{
+    background: var(--inset);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1rem 1.15rem;
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+  }}
+  .led {{
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--text-dim);
+  }}
+  .readout.is-set .led {{
+    background: var(--good);
+    box-shadow: 0 0 8px rgba(111,207,151,0.7);
+  }}
+  .readout.is-unset .led {{ animation: idle-pulse 2.4s ease-in-out infinite; }}
+  @keyframes idle-pulse {{
+    0%, 100% {{ opacity: 0.35; }}
+    50% {{ opacity: 0.9; }}
+  }}
+  .readout-text {{ min-width: 0; }}
+  .readout-label {{
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 0.2rem;
+  }}
+  .readout-name {{
+    font-family: var(--mono);
+    font-size: 0.98rem;
+    color: var(--amber);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }}
+  .readout.is-unset .readout-name {{ color: var(--text-dim); }}
+  .readout-sub {{
+    font-family: var(--mono);
+    font-size: 0.76rem;
+    color: var(--text-dim);
+    margin-top: 0.1rem;
+  }}
+  form.scan {{ margin: 0 0 1.75rem; }}
+  button.scan-btn {{
+    width: 100%;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--bg);
+    background: var(--amber);
+    border: 1px solid var(--amber);
+    border-radius: 3px;
+    padding: 0.85rem 1rem;
+    cursor: pointer;
+    transition: transform 0.08s ease, background 0.15s ease;
+  }}
+  button.scan-btn:hover {{ background: #edb562; }}
+  button.scan-btn:active {{ transform: translateY(1px); }}
+  button.scan-btn:disabled {{ opacity: 0.75; cursor: default; }}
+  button:focus-visible {{ outline: 2px solid var(--amber); outline-offset: 2px; }}
+  .bars {{
+    display: none;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 3px;
+    height: 12px;
+  }}
+  .scanning .bars {{ display: inline-flex; }}
+  .scanning .scan-label {{ display: none; }}
+  .bars span {{
+    width: 3px;
+    background: var(--bg);
+    animation: bar-bounce 0.9s ease-in-out infinite;
+  }}
+  .bars span:nth-child(1) {{ animation-delay: 0s; }}
+  .bars span:nth-child(2) {{ animation-delay: 0.15s; }}
+  .bars span:nth-child(3) {{ animation-delay: 0.3s; }}
+  .bars span:nth-child(4) {{ animation-delay: 0.45s; }}
+  @keyframes bar-bounce {{
+    0%, 100% {{ height: 3px; }}
+    50% {{ height: 12px; }}
+  }}
+  h2 {{
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    font-weight: 500;
+    margin: 0 0 0.75rem;
+  }}
+  .rows {{ display: flex; flex-direction: column; gap: 0.5rem; }}
+  .row {{
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-left: 2px solid var(--line);
+    border-radius: 3px;
+    padding: 0.7rem 0.85rem;
+  }}
+  .row.current {{ border-left-color: var(--amber); }}
+  .row .dot {{
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--good);
+    flex-shrink: 0;
+  }}
+  .row-info {{ flex: 1; min-width: 0; }}
+  .row-name {{ font-size: 0.92rem; font-weight: 550; }}
+  .row-addr {{
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    margin-top: 0.1rem;
+  }}
+  .row form {{ margin: 0; }}
+  .pin-btn {{
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text);
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 0.4rem 0.65rem;
+    cursor: pointer;
+    transition: border-color 0.15s ease, color 0.15s ease;
+  }}
+  .pin-btn:hover {{ border-color: var(--amber); color: var(--amber); }}
+  .empty {{
+    border: 1px dashed var(--line);
+    border-radius: 3px;
+    padding: 1.1rem;
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    text-align: center;
+  }}
+  footer {{
+    margin-top: 2.5rem;
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    color: #4d4f57;
+    text-align: center;
+  }}
+  @media (prefers-reduced-motion: reduce) {{
+    .led, .bars span {{ animation: none !important; }}
+  }}
+</style>
+</head>
 <body>
-<h1>Sonos target for this bridge</h1>
-<p>Currently pinned to: <b>{current}</b></p>
-<form method="post" action="/discover"><button type="submit">Scan network for Sonos speakers</button></form>
-{results}
-</body></html>
+<main>
+  <p class="eyebrow">sonos-castbridge</p>
+  <h1>Speaker target</h1>
+
+  <div class="readout {readout_state}">
+    <span class="led"></span>
+    <div class="readout-text">
+      <div class="readout-label">Pinned to</div>
+      <div class="readout-name">{readout_name}</div>
+      {readout_sub}
+    </div>
+  </div>
+
+  <form class="scan" method="post" action="/discover">
+    <button type="submit" class="scan-btn">
+      <span class="scan-label">Scan network</span>
+      <span class="bars"><span></span><span></span><span></span><span></span></span>
+    </button>
+  </form>
+
+  {results}
+
+  <footer>SSDP + ZoneGroupTopology &middot; re-checked every {interval}s</footer>
+</main>
+<script>
+  var f = document.querySelector("form.scan");
+  f.addEventListener("submit", function () {{
+    var btn = f.querySelector("button");
+    btn.disabled = true;
+    btn.classList.add("scanning");
+  }});
+</script>
+</body>
+</html>
 """
+
+
+def render_page(results_html=""):
+    state = load_state()
+    mac = state.get("mac")
+    if mac:
+        readout_state = "is-set"
+        readout_name = html.escape(state.get("name", "?"))
+        readout_sub = (
+            f'<div class="readout-sub">{html.escape(mac)} &middot; '
+            f'{html.escape(state.get("ip", "?"))}</div>'
+        )
+    else:
+        readout_state = "is-unset"
+        readout_name = "No target pinned"
+        readout_sub = ""
+    return PAGE_TEMPLATE.format(
+        readout_state=readout_state,
+        readout_name=readout_name,
+        readout_sub=readout_sub,
+        results=results_html,
+        interval=CHECK_INTERVAL,
+    )
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -283,32 +533,37 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/":
-            state = load_state()
-            current = f"{state.get('name', '?')} ({state.get('mac', 'none set')})" if state.get("mac") else "nothing selected yet"
-            self._send_html(PAGE_TEMPLATE.format(current=current, results=""))
+            self._send_html(render_page())
         else:
             self._send_html("Not found", 404)
 
     def do_POST(self):
         if self.path == "/discover":
             devices = discover_devices()
+            current_mac = load_state().get("mac")
             rows = "".join(
-                f"<tr><td>{d['name']}</td><td>{d['ip']}</td><td>{d['mac']}</td>"
-                f"<td><form method='post' action='/select' style='margin:0'>"
-                f"<input type='hidden' name='mac' value='{d['mac']}'>"
-                f"<input type='hidden' name='ip' value='{d['ip']}'>"
-                f"<input type='hidden' name='name' value='{d['name']}'>"
-                f"<button type='submit'>Use this one</button></form></td></tr>"
+                f'<div class="row{" current" if d["mac"] == current_mac else ""}">'
+                f'<span class="dot"></span>'
+                f'<div class="row-info">'
+                f'<div class="row-name">{html.escape(d["name"])}</div>'
+                f'<div class="row-addr">{html.escape(d["ip"])} &middot; {html.escape(d["mac"])}</div>'
+                f"</div>"
+                f"<form method='post' action='/select'>"
+                f"<input type='hidden' name='mac' value='{html.escape(d['mac'])}'>"
+                f"<input type='hidden' name='ip' value='{html.escape(d['ip'])}'>"
+                f"<input type='hidden' name='name' value='{html.escape(d['name'])}'>"
+                f"<button type='submit' class='pin-btn'>Pin</button></form>"
+                f"</div>"
                 for d in devices
             )
-            table = (
-                f"<h2>Found {len(devices)} speaker(s)</h2>"
-                f"<table><tr><th>Room</th><th>IP</th><th>MAC</th><th></th></tr>{rows}</table>"
-                if devices else "<p>No Sonos speakers responded. Is the mDNS/SSDP relay running?</p>"
+            plural = "" if len(devices) == 1 else "s"
+            results = (
+                f'<h2>Found {len(devices)} speaker{plural}</h2><div class="rows">{rows}</div>'
+                if devices else
+                '<div class="empty">No speakers responded on the LAN.<br>'
+                "Check that the mDNS/SSDP relay is running.</div>"
             )
-            state = load_state()
-            current = f"{state.get('name', '?')} ({state.get('mac', 'none set')})" if state.get("mac") else "nothing selected yet"
-            self._send_html(PAGE_TEMPLATE.format(current=current, results=table))
+            self._send_html(render_page(results))
         elif self.path == "/select":
             length = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(length).decode()

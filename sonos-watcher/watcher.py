@@ -33,6 +33,10 @@ SSDP_ST = "urn:schemas-upnp-org:device:ZonePlayer:1"
 DISCOVERY_TIMEOUT = 15
 CHECK_INTERVAL = int(os.environ.get("CHECK_INTERVAL_SECONDS", "60"))
 BRIDGE_CONTAINER_NAME = os.environ.get("BRIDGE_CONTAINER_NAME", "yt-sonos-bridge")
+# Absolute path of the compose project, identical on the host and inside
+# this container (see the volume mount in docker-compose.yml) — needed to
+# re-invoke `docker compose` from write_env_and_maybe_restart.
+PROJECT_DIR = os.environ.get("PROJECT_DIR", "/opt/sonos-castbridge")
 
 # Docker Compose creates its own bridge network for the project even when
 # every service uses network_mode: host, which leaves this host multi-homed
@@ -217,7 +221,12 @@ def save_state(state):
 
 def write_env_and_maybe_restart(ip):
     """Write SONOS_DEVICE_IP into the env file yt-sonos-bridge loads, and
-    restart it via the Docker socket if the IP actually changed."""
+    recreate it via the Docker socket if the IP actually changed.
+
+    This has to be a full `docker compose up` (recreate), not `docker
+    restart`: Docker bakes env_file values into a container at creation
+    time and never re-reads them on a plain restart, so restarting alone
+    would keep the bridge running against the stale IP forever."""
     current = None
     if os.path.exists(ENV_FILE):
         with open(ENV_FILE) as f:
@@ -231,26 +240,37 @@ def write_env_and_maybe_restart(ip):
     with open(ENV_FILE, "w") as f:
         f.write(f"SONOS_DEVICE_IP={ip}\n")
 
-    print(f"[sonos-watcher] IP changed ({current} -> {ip}), restarting {BRIDGE_CONTAINER_NAME}")
+    print(f"[sonos-watcher] IP changed ({current} -> {ip}), recreating {BRIDGE_CONTAINER_NAME}")
     try:
-        subprocess.run(["docker", "restart", BRIDGE_CONTAINER_NAME], check=True, timeout=30)
+        subprocess.run(
+            ["docker", "compose", "up", "-d", "--force-recreate", "--no-deps", BRIDGE_CONTAINER_NAME],
+            check=True, timeout=60, cwd=PROJECT_DIR,
+        )
     except Exception as e:
-        print(f"[sonos-watcher] Failed to restart bridge: {e}")
+        print(f"[sonos-watcher] Failed to recreate bridge: {e}")
     return True
 
 
 def watch_loop():
     while True:
-        state = load_state()
-        mac = state.get("mac")
-        if mac:
-            ip = resolve_ip_by_mac(mac)
-            if ip:
-                write_env_and_maybe_restart(ip)
-                if ip != state.get("ip"):
-                    save_state({**state, "ip": ip})
-            else:
-                print(f"[sonos-watcher] Could not find {mac} on the network this round")
+        try:
+            state = load_state()
+            mac = state.get("mac")
+            if mac:
+                ip = resolve_ip_by_mac(mac)
+                if ip:
+                    write_env_and_maybe_restart(ip)
+                    if ip != state.get("ip"):
+                        save_state({**state, "ip": ip})
+                else:
+                    print(f"[sonos-watcher] Could not find {mac} on the network this round")
+        except Exception as e:
+            # A transient failure here (e.g. HOST_IP briefly unbindable
+            # during a DHCP renewal) must not kill this thread — it's a
+            # daemon thread with no supervisor, so an uncaught exception
+            # would silently stop all MAC-tracking until someone notices
+            # and restarts the container by hand.
+            print(f"[sonos-watcher] watch_loop error this round: {e}")
         time.sleep(CHECK_INTERVAL)
 
 

@@ -64,6 +64,20 @@ services:
       # Bootstrap IP for the ZoneGroupTopology query (any already-known
       # Sonos speaker works) — reuses whatever's already set for the bridge.
       SEED_IP: ${SONOS_DEVICE_IP}
+      # Absolute path of this compose project *on the host*. watcher.py
+      # needs it to re-invoke `docker compose` (see write_env_and_maybe_
+      # restart and the volume mount below). Override in .env if this
+      # isn't installed at the default path.
+      PROJECT_DIR: ${PROJECT_DIR:-/opt/sonos-castbridge}
     volumes:
       - ./data:/data
       - /var/run/docker.sock:/var/run/docker.sock
+      # Mounted at the *same absolute path* it has on the host, not some
+      # arbitrary container-internal path: watcher.py drives the host's
+      # Docker daemon through the socket above (docker-outside-of-docker),
+      # and `docker compose`'s relative volume paths (./data, etc.) get
+      # resolved by whoever the daemon believes the project directory is —
+      # which is this path as the *host* sees it, not as this container
+      # sees it. A mismatched mountpoint would make compose bind-mount the
+      # wrong (nonexistent) directory into yt-sonos-bridge on recreate.
+      - ${PROJECT_DIR:-/opt/sonos-castbridge}:${PROJECT_DIR:-/opt/sonos-castbridge}:ro
